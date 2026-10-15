@@ -1,0 +1,6 @@
+{
+  "name": "SceneLookLab.Editor",
+  "rootNamespace": "SceneLookLab",
+  "references": ["SceneLookLab.Runtime", "Unity.RenderPipelines.Core.Runtime", "Unity.RenderPipelines.Universal.Runtime"],
+  "includePlatforms": ["Editor"]
+}

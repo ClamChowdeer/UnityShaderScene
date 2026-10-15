@@ -1,0 +1,21 @@
+# This repository is a Unity package, not a game project.
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+.vs/
+.idea/
+*.csproj
+*.sln
+*.user
+*.log
+*.tgz
+*.unitypackage
+Validation-*/
+TestProject/
+PresetChecks/
+.DS_Store
+Thumbs.db
