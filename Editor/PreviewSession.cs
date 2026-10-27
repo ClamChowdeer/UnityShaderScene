@@ -272,6 +272,11 @@ namespace SceneLookLab
                 data.volumeLayerMask = ~0;
             }
             if (data.volumeTrigger == null) data.volumeTrigger = source.transform;
+            // Each SubmitRenderRequest runs its own URP depth pass/copy while the
+            // matching material transaction is active. Never borrow source-camera
+            // depth, or inherit an explicit Off override from that camera.
+            data.requiresDepthOption = CameraOverrideOption.On;
+            previewCamera.depthTextureMode |= DepthTextureMode.Depth;
             EnsureTargets(width, height);
             var request = new UniversalRenderPipeline.SingleCameraRequest { destination = Original };
             if (!RenderPipeline.SupportsRenderRequest(previewCamera, request))

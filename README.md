@@ -1,4 +1,4 @@
-# Scene Look Lab — prototype 0.7
+# Scene Look Lab — prototype 0.8
 
 A Unity Editor package for comparing and applying scene surface looks. Targets Unity 6000.0 and URP 17.0.4. Preview remains temporary; Apply creates saved materials, and Outline Toon adds runtime outline objects.
 
@@ -11,7 +11,7 @@ Requires Unity 6000.0 and Universal Render Pipeline (tested with Unity 6000.0.68
 3. Paste the version-pinned URL:
 
    ```text
-   https://github.com/ClamChowdeer/UnityShaderScene.git#v0.7.0
+   https://github.com/ClamChowdeer/UnityShaderScene.git#v0.8.0
    ```
 
 4. Wait for import and compilation, then open **Tools → Scene Look Lab**.
@@ -92,6 +92,16 @@ Other matching serialized properties may carry across, but this is not a univers
 
 ## Preview behaviour
 
+### Depth and normals (0.8)
+
+All built-in looks support URP depth and normal generation. The stylized surface shader now includes a DepthNormalsOnly pass (including URP's deferred octahedral normal encoding and rendering-layer output). Standard Lit uses Unity's native passes. Colour, depth and depth-normal passes use the same base texture alpha, tint alpha, cutoff and culling, including opted-in cutout foliage. Clay shares its procedural bump-normal calculation between colour and normal rendering. The expanded Outline Toon shell now writes matching silhouette depth and normals, with the same visibility and cutout rules as its colour pass.
+
+The hidden preview camera explicitly requests its own depth texture even when the source camera or pipeline disables depth textures. Original and styled render requests regenerate depth inside their respective material states; styled depth is not borrowed from the source camera or reused from the original capture. This does not change the source camera, renderer asset or pipeline settings. Normals are generated when URP renderer features request them.
+
+Regression coverage includes a synthetic depth-clipped raymarched cloud slab, depth fog and soft-particle intersection fading, tested in Forward, Deferred (packed normals) and Forward+, in both Render Graph and compatibility mode. The fixture deliberately swaps the foliage alpha mask and uses a tilted background to detect stale depth, missing normals and filled-in cutout holes. Separate tests cover DepthOnly prepasses, post-opaque depth copying, expanded outline silhouettes and Clay bump normals.
+
+These tests exercise the URP depth/normal contract, not a particular third-party cloud package. Effects using proprietary buffers, temporal history, custom camera callbacks or textures sampled before URP produces them still need integration-specific testing. Custom replacement shaders must supply their own compatible passes. Transparent surfaces remain excluded; this release does not add transparent-depth rendering, original foliage wind deformation or motion vectors.
+
 The window creates a hidden camera, renders an original image, temporarily replaces eligible renderer material references, renders the look image, and restores all references in a synchronous `try/finally` scope. Outline Toon also creates temporary hidden mesh shells under the affected objects. Temporary materials, cameras, textures and shells are cleaned up. Source material assets are not edited. This is a transaction over live renderer references, not a separate copy of the scene: callbacks can observe temporary assignments and shell objects during the styled capture.
 
 The source camera's URP settings are copied. Camera stacks are not copied; overlay cameras, screen-space overlay UI and camera-attached custom scripts are not reproduced. Temporal antialiasing is disabled for deterministic still comparisons. Original and styled captures are sequential, so time-dependent effects may differ slightly.
@@ -104,10 +114,10 @@ The source camera's URP settings are copied. Camera stacks are not copied; overl
 - Stylized looks preserve base texture, UV scale/offset and colour. They use simplified main-light shading, fog and shadows. Original normal maps, metallic response, baked GI and additional lights are not reproduced. Standard Lit uses Unity's URP lighting, with the conversion limitations described above.
 - Custom shader support is experimental. Imported shader packages may need custom adapters.
 - Scene changes do not automatically mark a cached capture as stale; recapture or enable auto refresh before exporting after editing the scene.
-- Renderer features requiring custom material passes (for example depth normals or motion vectors) can need additional support. This prototype is for visual exploration, not performance benchmarking or pixel-identical final output.
+- Motion-vector passes and third-party-specific buffers can need additional support. Built-in looks support URP depth and normals. This prototype is for visual exploration, not performance benchmarking or pixel-identical final output.
 
 ## Development validation
 
-The repository includes Editor validation code, but no demo project, generated materials, screenshots or builds. Run `SceneLookLab.LabValidation.Run` only in a disposable Unity 6000.0 URP test project, in batch mode with an `Assets/.gitkeep` marker. The runner creates/replaces test assets under `Assets/LabDemo`; never run it in a game project. It checks preview restoration, textures, filtering, dirty state, compilation, rendering, profiles and cleanup. Apply checks cover chosen destinations, preserved originals, filename collisions, Undo/Redo, saved-scene reload, persistent outlines and a Windows player build with shader inclusion. Clay, Standard Lit and hatching-direction checks are included. Images, results and the test player are written to the sibling `Validation-0.7` folder. The player build requires Windows build support.
+The repository includes Editor validation code, but no demo project, generated materials, screenshots or builds. Run `SceneLookLab.LabValidation.Run` only in a disposable Unity 6000.0 URP test project, in batch mode with an `Assets/.gitkeep` marker. Use `SceneLookLab.LabValidation.RunCompatibility` for the compatibility-mode run; it restores the prior compatibility setting afterwards. The runner creates/replaces test assets under `Assets/LabDemo`; never run it in a game project. It checks preview restoration, textures, filtering, dirty state, compilation, rendering, profiles and cleanup. Apply checks cover chosen destinations, preserved originals, filename collisions, Undo/Redo, saved-scene reload, persistent outlines and a Windows player build with shader inclusion. Clay, Standard Lit, hatching direction and the depth-effect regressions above are included. Images, results and the test player are written to the sibling `Validation-0.8` folder. The player build requires Windows build support.
 
 Test your specific game scene and imported shaders before adopting the package. Applying a look does not commit or push any game-project files.
