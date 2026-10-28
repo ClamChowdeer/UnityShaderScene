@@ -229,7 +229,7 @@ namespace SceneLookLab
                 RenderTexture.active = target;
                 tex.ReadPixels(new Rect(0, 0, target.width, target.height), 0, 0);
                 tex.Apply();
-                File.WriteAllBytes(Path.GetFullPath("../Validation-0.8/" + name), tex.EncodeToPNG());
+                File.WriteAllBytes(Path.GetFullPath("../Validation-0.9/" + name), tex.EncodeToPNG());
             }
             finally { RenderTexture.active = old; Object.DestroyImmediate(tex); }
         }

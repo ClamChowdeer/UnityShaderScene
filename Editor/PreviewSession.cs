@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -18,6 +19,7 @@ namespace SceneLookLab
         readonly List<Object> outlineObjects = new();
         readonly List<(Transform transform, bool wasDirty)> outlineParents = new();
         readonly List<(Renderer renderer, bool enabled, bool dirty)> appliedOutlines = new();
+        public MaterialPlan Plan { get; private set; }
         public int ChangedSlots { get; private set; }
         public int SkippedSlots { get; private set; }
         public int PropertyBlockRenderers { get; private set; }
@@ -29,43 +31,21 @@ namespace SceneLookLab
             if (shader == null || !shader.isSupported)
                 throw new InvalidOperationException("The selected shader is missing or unsupported.");
 
-            foreach (var renderer in renderers)
+            Plan = MaterialCompatibility.Scan(renderers, profile, scope);
+            SkippedSlots = Plan.Preserved;
+            PropertyBlockRenderers = Plan.entries.Where(e => e.renderer.HasPropertyBlock()).Select(e => e.renderer).Distinct().Count();
+            foreach (var group in Plan.entries.GroupBy(e => e.renderer))
             {
-                if (renderer == null || renderer.GetComponent<AppliedLookOutline>() != null || !renderer.enabled || !renderer.gameObject.activeInHierarchy ||
-                    !renderer.gameObject.scene.IsValid() || !renderer.gameObject.scene.isLoaded ||
-                    EditorSceneManager.IsPreviewScene(renderer.gameObject.scene) ||
-                    EditorUtility.IsPersistent(renderer) ||
-                    (scope != null && !renderer.transform.IsChildOf(scope)) ||
-                    (profile.includedLayers.value & (1 << renderer.gameObject.layer)) == 0)
-                    continue;
-
+                var renderer = group.Key;
                 var source = renderer.sharedMaterials;
-                // Property blocks can override the proposed look's properties. Preserve them
-                // by leaving these renderers unchanged, rather than silently mis-previewing.
-                if (!(renderer is MeshRenderer || renderer is SkinnedMeshRenderer) || renderer.HasPropertyBlock())
-                {
-                    SkippedSlots += source.Length;
-                    if (renderer.HasPropertyBlock()) PropertyBlockRenderers++;
-                    continue;
-                }
-
                 var output = (Material[])source.Clone();
                 bool changed = false;
-                for (int i = 0; i < source.Length; i++)
+                foreach (var entry in group)
                 {
-                    var material = source[i];
-                    bool alphaClip = material != null &&
-                        ((material.HasProperty("_AlphaClip") && material.GetFloat("_AlphaClip") > 0.5f) ||
-                         material.IsKeywordEnabled("_ALPHATEST_ON") || material.GetTag("RenderType", false) == "TransparentCutout");
-                    if (material == null || material.shader == null ||
-                        material.renderQueue >= (int)RenderQueue.Transparent ||
-                        material.GetTag("RenderType", false) == "Transparent" ||
-                        (material.HasProperty("_Surface") && material.GetFloat("_Surface") > 0.5f) ||
-                        (alphaClip && !profile.includeAlphaClipped))
-                    {
-                        SkippedSlots++;
-                        continue;
-                    }
+                    if (!entry.convert) continue;
+                    int i = entry.slot;
+                    var material = entry.material;
+                    bool alphaClip = entry.alphaClip;
                     if (!replacements.TryGetValue(material, out var replacement))
                     {
                         replacement = BuildMaterial(material, profile, shader, alphaClip);
@@ -173,6 +153,14 @@ namespace SceneLookLab
                 }
                 else if (profile.style != LookStyle.CustomShader)
                 {
+                    bool meadow = MaterialCompatibility.IsMeadow(source);
+                    result.SetFloat("_MeadowBlend", meadow ? 1 : 0);
+                    if (meadow)
+                    {
+                        bool adapted = source.shader.name == "Hidden/SceneLookLab/Surface";
+                        result.SetColor("_MeadowColorA", source.GetColor(adapted ? "_MeadowColorA" : "_ColorA"));
+                        result.SetColor("_MeadowColorB", source.GetColor(adapted ? "_MeadowColorB" : "_ColorB"));
+                    }
                     result.SetFloat("_LookMode", (float)profile.style);
                     result.SetFloat("_Bands", profile.bands);
                     result.SetColor("_ShadowTint", profile.shadowColor);
@@ -239,6 +227,7 @@ namespace SceneLookLab
         public RenderTexture Original { get; private set; }
         public RenderTexture Styled { get; private set; }
         public string Report { get; private set; }
+        public MaterialPlan Plan { get; private set; }
 
         public void Capture(Camera source, LookProfile profile, Transform scope, int width = 1280, int height = 720)
         {
@@ -287,8 +276,8 @@ namespace SceneLookLab
                 transaction.Apply(Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None), profile, scope);
                 request.destination = Styled;
                 RenderPipeline.SubmitRenderRequest(previewCamera, request);
-                Report = $"{transaction.ChangedSlots} material slots previewed · {transaction.SkippedSlots} skipped · " +
-                    $"{transaction.PropertyBlockRenderers} renderers with property blocks skipped";
+                Plan = transaction.Plan;
+                Report = Plan.Summary;
             }
         }
 

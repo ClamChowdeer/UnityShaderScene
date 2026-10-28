@@ -3,6 +3,9 @@ Shader "Hidden/SceneLookLab/Surface"
     Properties
     {
         _BaseMap("Base Map", 2D) = "white" {}
+        [HideInInspector] _MeadowBlend("Meadow Blend", Float) = 0
+        [HideInInspector] _MeadowColorA("Earth Shade", Color) = (0.34,0.37,0.19,1)
+        [HideInInspector] _MeadowColorB("Moss Light", Color) = (0.52,0.52,0.29,1)
         _BaseColor("Base Colour", Color) = (1,1,1,1)
         _ClayColor("Clay Colour", Color) = (1,1,1,1)
         _ShadowTint("Shadow Tint", Color) = (0.27,0.32,0.43,1)
@@ -35,6 +38,8 @@ Shader "Hidden/SceneLookLab/Surface"
         TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
         CBUFFER_START(UnityPerMaterial)
             float4 _BaseMap_ST;
+            half4 _MeadowColorA, _MeadowColorB;
+            float _MeadowBlend;
             half4 _BaseColor, _ClayColor, _ShadowTint, _AccentColor;
             float _Bands, _LookMode, _AlphaClip, _Cutoff, _Cull;
             float _Softness, _PatternScale, _RimPower, _RimStrength;
@@ -58,9 +63,23 @@ Shader "Hidden/SceneLookLab/Surface"
             o.fog = ComputeFogFactor(o.positionCS.z);
             return o;
         }
-        half4 BaseSample(float2 uv)
+        // Adapter for ScGame Greybox/Meadow Ground's two-colour world-space field.
+        float MeadowHash(float2 p) { return frac(sin(dot(p, float2(127.1,311.7))) * 43758.5453); }
+        float MeadowNoise(float2 p)
+        {
+            float2 a = floor(p), f = frac(p);
+            f = f * f * (3 - 2 * f);
+            return lerp(lerp(MeadowHash(a), MeadowHash(a + float2(1,0)), f.x),
+                lerp(MeadowHash(a + float2(0,1)), MeadowHash(a + 1), f.x), f.y);
+        }
+        half4 BaseSample(float2 uv, float3 positionWS)
         {
             half4 base = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv) * _BaseColor;
+            if (_MeadowBlend > 0.5)
+            {
+                float field = MeadowNoise(positionWS.xz * 0.24) * 0.7 + MeadowNoise(positionWS.xz * 0.9) * 0.3;
+                base = half4(lerp(_MeadowColorA.rgb, _MeadowColorB.rgb, field) * _BaseColor.rgb, _BaseColor.a);
+            }
             if (_AlphaClip > 0.5) clip(base.a - _Cutoff);
             return base;
         }
@@ -120,7 +139,7 @@ Shader "Hidden/SceneLookLab/Surface"
             half4 Frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
-                half4 base = BaseSample(i.uv);
+                half4 base = BaseSample(i.uv, i.positionWS);
                 half3 colour = base.rgb;
                 int mode = (int)round(_LookMode);
                 half3 normal = normalize(i.normalWS);
@@ -237,7 +256,7 @@ Shader "Hidden/SceneLookLab/Surface"
             #pragma vertex Vert
             #pragma fragment DepthFrag
             #pragma multi_compile_instancing
-            half4 DepthFrag(Varyings i) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i); BaseSample(i.uv); return i.positionCS.z; }
+            half4 DepthFrag(Varyings i) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i); BaseSample(i.uv, i.positionWS); return i.positionCS.z; }
             ENDHLSL
         }
         Pass
@@ -260,7 +279,7 @@ Shader "Hidden/SceneLookLab/Surface"
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
-                BaseSample(i.uv);
+                BaseSample(i.uv, i.positionWS);
                 float grain, fineFade;
                 float3 normal = SurfaceNormal(i, grain, fineFade);
                 #if defined(_GBUFFER_NORMALS_OCT)
@@ -304,7 +323,7 @@ Shader "Hidden/SceneLookLab/Surface"
                 #endif
                 return o;
             }
-            half4 ShadowFrag(Varyings i) : SV_Target { BaseSample(i.uv); return 0; }
+            half4 ShadowFrag(Varyings i) : SV_Target { BaseSample(i.uv, i.positionWS); return 0; }
             ENDHLSL
         }
     }

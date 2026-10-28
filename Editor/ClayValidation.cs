@@ -49,7 +49,7 @@ namespace SceneLookLab
                         image.ReadPixels(new Rect(0, 0, 800, 800), 0, 0);
                         image.Apply();
                         byte[] png = image.EncodeToPNG();
-                        File.WriteAllBytes(Path.GetFullPath("../Validation-0.8/" + name + ".png"), png);
+                        File.WriteAllBytes(Path.GetFullPath("../Validation-0.9/" + name + ".png"), png);
                         return png;
                     }
                     finally { RenderTexture.active = prior; Object.DestroyImmediate(image); }

@@ -43,7 +43,7 @@ namespace SceneLookLab
                 throw new InvalidOperationException("Validation is restricted to the isolated batch test project.");
             try
             {
-                destination = Path.GetFullPath("../Validation-0.8");
+                destination = Path.GetFullPath("../Validation-0.9");
                 Directory.CreateDirectory(destination);
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
                 if (!AssetDatabase.IsValidFolder("Assets/LabDemo")) AssetDatabase.CreateFolder("Assets", "LabDemo");
@@ -337,6 +337,7 @@ namespace SceneLookLab
             HatchValidation.Run(camera, null);
             StandardLitValidation.Run(original);
             OcclusionValidation.Run();
+            CompatibilityValidation.Run(camera, subject, original);
             ApplyValidation.Run(subject, original);
             File.WriteAllText(Path.Combine(destination, "result.txt"), "PASS: preview regressions and apply destination, asset preservation, runtime shader references, Undo/Redo, outline cleanup and filename collision checks.\n");
             Debug.Log("SCENE_LOOK_LAB_VALIDATION_PASSED");

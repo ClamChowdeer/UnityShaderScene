@@ -60,6 +60,7 @@ namespace SceneLookLab
             int group = Undo.GetCurrentGroup();
             Undo.SetCurrentGroupName("Apply Scene Look");
             int slots = 0, skipped = 0;
+            string compatibility = "";
             try
             {
                 // Use exactly the preview's conversion and eligibility rules, then restore it
@@ -68,6 +69,7 @@ namespace SceneLookLab
                 {
                     transaction.Apply(renderers, profile, scope, false);
                     skipped = transaction.SkippedSlots;
+                    compatibility = transaction.Plan.Describe();
                     foreach (var renderer in renderers)
                     {
                         var before = originals[renderer];
@@ -90,7 +92,7 @@ namespace SceneLookLab
                         changes.Add(new Change { renderer = renderer, before = before, after = after });
                     }
                 }
-                if (changes.Count == 0) return "No eligible material slots were found. Nothing was changed.";
+                if (changes.Count == 0) return "Nothing was changed.\n" + compatibility;
                 foreach (var material in temporary.ToArray()) SaveMaterial(material, folder, assets);
                 foreach (var change in changes)
                 {
@@ -106,7 +108,7 @@ namespace SceneLookLab
                 Undo.CollapseUndoOperations(group);
                 return $"Applied {profile.style} to {slots} slots on {changes.Count} objects; {skipped} slots skipped.\n" +
                     $"Created {assets.Count} materials in {folder}. Save your scene to keep the assignments.\n" +
-                    "Undo restores scene assignments and removes outline objects. Generated material files remain for reuse.";
+                    "Undo restores scene assignments and removes outline objects. Generated material files remain for reuse.\n\n" + compatibility;
             }
             catch
             {
