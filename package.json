@@ -1,6 +1,6 @@
 {
   "name": "com.elenroth.scene-look-lab",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "displayName": "Scene Look Lab",
   "description": "Preview and apply whole-scene shader looks in Unity URP, with original material preservation and Undo support.",
   "repository": { "type": "git", "url": "https://github.com/ClamChowdeer/UnityShaderScene.git" },

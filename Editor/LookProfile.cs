@@ -33,6 +33,8 @@ namespace SceneLookLab
         [Range(0, 1)] public float clayTextureStrength = 1;
         public LayerMask includedLayers = ~0;
         public bool includeAlphaClipped;
+        public Material[] excludedMaterials = System.Array.Empty<Material>();
+        public Shader[] excludedShaders = System.Array.Empty<Shader>();
         public Shader customShader;
         public string sourceTexture = "_BaseMap";
         public string sourceColor = "_BaseColor";

@@ -1,4 +1,4 @@
-# Scene Look Lab — prototype 0.8
+# Scene Look Lab — prototype 0.9
 
 A Unity Editor package for comparing and applying scene surface looks. Targets Unity 6000.0 and URP 17.0.4. Preview remains temporary; Apply creates saved materials, and Outline Toon adds runtime outline objects.
 
@@ -11,7 +11,7 @@ Requires Unity 6000.0 and Universal Render Pipeline (tested with Unity 6000.0.68
 3. Paste the version-pinned URL:
 
    ```text
-   https://github.com/ClamChowdeer/UnityShaderScene.git#v0.8.0
+   https://github.com/ClamChowdeer/UnityShaderScene.git#v0.9.0
    ```
 
 4. Wait for import and compilation, then open **Tools → Scene Look Lab**.
@@ -55,6 +55,18 @@ Use Original, Look, Side by side, or Wipe to compare. **Auto refresh** captures 
 
 Use **Include layers** or an **Optional hierarchy root** to limit the affected geometry. All loaded scenes remain visible; only eligible geometry is overridden. **Save as new** stores a Look Profile asset in a location you choose. Selecting a saved profile copies its settings into the window; editing those settings never silently overwrites the saved profile. **Export look PNG** saves the styled image.
 
+## Material compatibility (0.9)
+
+Click **Check material compatibility** to see which material slots are eligible, preserved or need review. The scan does not change the scene. **Capture comparison** and **Apply to Scene…** use the same checks; Apply scans again before creating materials. The report names each object, material, source shader and reason, and can be copied in full.
+
+Supported source shaders are URP Lit, Simple Lit, Unlit, Scene Look Lab's surface shader, and the specific Meadow Ground adapter below. Unknown shaders stay unchanged even when they expose familiar colour properties. Custom Shader mode does not bypass this safeguard. A new source shader needs an explicit, tested converter; matching property names alone cannot reproduce its appearance.
+
+Expand **Keep original materials / shaders** to add material or shader assets to the exclusion lists. Exclusions are saved in Look Profiles and retained when switching looks. They apply to both preview and Apply. Existing filters for cutouts, transparency, layers, hierarchy and property blocks still apply.
+
+**ScGame Greybox/Meadow Ground:** the adapter preserves its Earth shade and Moss light colours and two-scale world-space noise blend in the built-in texture-preserving styles, including Clay and Toon. Lighting is restyled. Clay's texture-strength control also controls the retained blend. Checker, World Normals and Ink Hatching intentionally replace source colours. Standard Lit and Custom Shader preserve the original Meadow material and report why: those targets cannot directly represent this procedural blend. Already-adapted Meadow materials retain this protection on subsequent conversions.
+
+This prevents unsupported conversions from silently producing white surfaces; it cannot guarantee compatibility with every shader or render effect. The report explicitly notes that ordinary conversions retain base texture/colour, not every original shading feature.
+
 ## Hatching direction
 
 Select **Ink Hatching** and adjust **Hatching rotation (°)** from 0 to 180. Both perpendicular line sets rotate together in screen space: 0 retains the original diagonals, 45 aligns them horizontally/vertically, and 90 swaps which direction is the primary hatch. A full 180 returns to the initial orientation. Spacing and ink/paper colours remain independent. The setting is stored in saved profiles and generated materials and works in gameplay. Existing profiles/materials default to zero, preserving their previous direction. Hatching remains camera/screen-oriented, not attached to the model's surface.
@@ -74,7 +86,7 @@ Detail uses model-local 3D coordinates, avoiding UV seams and sliding when rigid
 ## Apply a look to your scene
 
 1. Choose your Look and settings; optionally limit the hierarchy and layers.
-2. Click **Apply to Scene…**. The folder picker opens every time: choose or create a folder inside this project's **Assets** folder. Cancelling makes no scene or material changes. Linked folders and folders outside Assets are rejected.
+2. Click **Apply to Scene…**. If compatible slots exist, choose or create a folder inside this project's **Assets** folder. If none exist, the report explains why nothing can be applied. Cancelling makes no scene or material changes. Linked folders and folders outside Assets are rejected.
 3. Confirm the scope and destination. With no hierarchy root, eligible objects in **all loaded scenes** are affected, not just objects visible in the preview camera.
 4. New materials are created in your chosen folder and assigned to scene instances. Original material and prefab assets stay unchanged; colliding filenames receive unique suffixes. Save your scene when satisfied.
 
@@ -86,7 +98,7 @@ Test in a scene copy before adopting a look in production. Apply does not save s
 
 ## Custom shader mapping
 
-Choose a URP-compatible surface shader. The tool starts from a temporary copy of each source material, switches the shader, and maps base texture and colour. It falls back from `_BaseMap` to `_MainTex` and from `_BaseColor` to `_Color`. You can specify the source and destination property names; texture scale and offset are copied too.
+Choose a URP-compatible surface shader. For supported source materials, the tool starts from a temporary copy, switches the shader, and maps base texture and colour. It falls back from `_BaseMap` to `_MainTex` and from `_BaseColor` to `_Color`. You can specify the source and destination property names; texture scale and offset are copied too. Unknown source shaders and procedural Meadow Ground remain unchanged in this mode.
 
 Other matching serialized properties may carry across, but this is not a universal shader converter. Shader-specific keyword validation, texture packing, render-state setup, extra passes, additional textures and vertex animation need dedicated adapters. Using the built-in looks is the supported baseline.
 
@@ -118,6 +130,6 @@ The source camera's URP settings are copied. Camera stacks are not copied; overl
 
 ## Development validation
 
-The repository includes Editor validation code, but no demo project, generated materials, screenshots or builds. Run `SceneLookLab.LabValidation.Run` only in a disposable Unity 6000.0 URP test project, in batch mode with an `Assets/.gitkeep` marker. Use `SceneLookLab.LabValidation.RunCompatibility` for the compatibility-mode run; it restores the prior compatibility setting afterwards. The runner creates/replaces test assets under `Assets/LabDemo`; never run it in a game project. It checks preview restoration, textures, filtering, dirty state, compilation, rendering, profiles and cleanup. Apply checks cover chosen destinations, preserved originals, filename collisions, Undo/Redo, saved-scene reload, persistent outlines and a Windows player build with shader inclusion. Clay, Standard Lit, hatching direction and the depth-effect regressions above are included. Images, results and the test player are written to the sibling `Validation-0.8` folder. The player build requires Windows build support.
+The repository includes Editor validation code, but no demo project, generated materials, screenshots or builds. Run `SceneLookLab.LabValidation.Run` only in a disposable Unity 6000.0 URP test project, in batch mode with an `Assets/.gitkeep` marker. Use `SceneLookLab.LabValidation.RunCompatibility` for the compatibility-mode run; it restores the prior compatibility setting afterwards. The runner creates/replaces test assets under `Assets/LabDemo`; never run it in a game project. It checks preview restoration, textures, filtering, dirty state, compilation, rendering, profiles and cleanup. Apply checks cover chosen destinations, preserved originals, filename collisions, Undo/Redo, saved-scene reload, persistent outlines and a Windows player build with shader inclusion. Clay, Standard Lit, hatching direction and the depth-effect regressions above are included. Compatibility checks cover unknown-source preservation, exclusions, mixed slots, Meadow colour-pattern rendering, persisted conversions and Undo. Images, results and the test player are written to the sibling `Validation-0.9` folder. The player build requires Windows build support.
 
 Test your specific game scene and imported shaders before adopting the package. Applying a look does not commit or push any game-project files.

@@ -20,6 +20,9 @@ namespace SceneLookLab
         Vector2 scroll;
         string error;
         bool stale = true;
+        MaterialPlan compatibilityPlan;
+        bool showCompatibility;
+        bool showExclusions;
         double nextRefresh;
         static readonly string[] ViewNames = { "Original", "Look", "Side by side", "Wipe" };
 
@@ -84,6 +87,7 @@ namespace SceneLookLab
                 var source = useSceneView ? SceneView.lastActiveSceneView?.camera : sceneCamera;
                 session ??= new PreviewSession();
                 session.Capture(source, working, scope);
+                compatibilityPlan = session.Plan;
                 error = null;
                 stale = false;
             }
@@ -186,6 +190,15 @@ namespace SceneLookLab
                 EditorGUILayout.HelpBox("Custom mode maps base texture, tiling and colour. Other matching properties are copied, but shader keywords, multipass effects and custom lighting may need shader-specific setup.", MessageType.Info);
             }
             working.includeAlphaClipped = EditorGUILayout.Toggle("Include cutout meshes", working.includeAlphaClipped);
+            showExclusions = EditorGUILayout.Foldout(showExclusions, "Keep original materials / shaders", true);
+            if (showExclusions)
+            {
+                var serialized = new SerializedObject(working);
+                serialized.Update();
+                EditorGUILayout.PropertyField(serialized.FindProperty("excludedMaterials"), new GUIContent("Excluded materials"), true);
+                EditorGUILayout.PropertyField(serialized.FindProperty("excludedShaders"), new GUIContent("Excluded shaders"), true);
+                if (serialized.ApplyModifiedProperties()) stale = true;
+            }
             if (EditorGUI.EndChangeCheck()) stale = true;
 
             EditorGUILayout.BeginHorizontal();
@@ -213,6 +226,30 @@ namespace SceneLookLab
                 if (GUILayout.Button("Export look PNG…", GUILayout.Height(28))) Export();
             EditorGUILayout.EndHorizontal();
             viewMode = GUILayout.Toolbar(viewMode, ViewNames);
+            if (GUILayout.Button("Check material compatibility"))
+            {
+                compatibilityPlan = MaterialCompatibility.Scan(FindObjectsByType<Renderer>(FindObjectsSortMode.None), working, scope);
+                showCompatibility = true;
+            }
+            if (compatibilityPlan != null)
+            {
+                EditorGUILayout.HelpBox(compatibilityPlan.Summary + "\nSnapshot from the last scan or capture. Apply always checks again.",
+                    compatibilityPlan.NeedsReview > 0 ? MessageType.Warning : MessageType.Info);
+                showCompatibility = EditorGUILayout.Foldout(showCompatibility, "Material compatibility report", true);
+                if (showCompatibility)
+                {
+                    if (GUILayout.Button("Copy full report")) EditorGUIUtility.systemCopyBuffer = compatibilityPlan.Describe();
+                    int shown = 0;
+                    foreach (var entry in compatibilityPlan.entries)
+                    {
+                        if (shown++ >= 200) { EditorGUILayout.LabelField("Showing 200 slots. Copy the full report for the rest."); break; }
+                        EditorGUILayout.LabelField((entry.convert ? "CONVERT" : entry.review ? "REVIEW — PRESERVED" : "PRESERVE") +
+                            " · " + (entry.renderer != null ? entry.renderer.name : "(removed renderer)") + " · slot " + entry.slot, EditorStyles.boldLabel);
+                        EditorGUILayout.ObjectField(entry.material, typeof(Material), false);
+                        EditorGUILayout.LabelField(entry.reason, EditorStyles.wordWrappedMiniLabel);
+                    }
+                }
+            }
             using (new EditorGUI.DisabledScope(EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling))
                 if (GUILayout.Button("Apply to Scene…", GUILayout.Height(28))) ApplyToScene();
             if (viewMode == 3) wipe = EditorGUILayout.Slider("Original / Look", wipe, 0, 1);
@@ -259,12 +296,21 @@ namespace SceneLookLab
             autoRefresh = false;
             try
             {
+                compatibilityPlan = MaterialCompatibility.Scan(FindObjectsByType<Renderer>(FindObjectsSortMode.None), working, scope);
+                showCompatibility = true;
+                if (compatibilityPlan.Converted == 0)
+                {
+                    EditorUtility.DisplayDialog("No compatible materials to apply", compatibilityPlan.Summary +
+                        "\nNothing was changed. See the compatibility report for reasons.", "OK");
+                    return;
+                }
                 string selected = EditorUtility.OpenFolderPanel("Save new look materials in…", Application.dataPath, "");
                 if (string.IsNullOrEmpty(selected)) return;
                 string folder = SceneLookApply.ProjectFolder(selected);
                 string target = scope != null ? "the hierarchy under '" + scope.name + "'" : "ALL loaded scenes";
                 if (!EditorUtility.DisplayDialog("Apply " + working.style + " to scene?",
                     "Apply the CURRENT settings to eligible objects in " + target + ". Layer and cutout filters are respected.\n\n" +
+                    compatibilityPlan.Summary + "\nUnsupported and excluded materials will remain unchanged. Review the report in the window if unsure.\n\n" +
                     "New materials: " + folder + "\n\nOriginal material and prefab assets will not be changed. " +
                     "Existing destination files will not be overwritten. Scenes are not saved automatically. " +
                     "Undo restores scene assignments; generated material files remain. Applying again converts the currently assigned materials.",
