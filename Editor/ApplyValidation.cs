@@ -110,7 +110,7 @@ namespace SceneLookLab
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
                 scenes = new[] { scenePath },
-                locationPathName = Path.GetFullPath("../Validation-0.7/Player/SceneLookLab.exe"),
+                locationPathName = Path.GetFullPath("../Validation-0.8/Player/SceneLookLab.exe"),
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.Development | BuildOptions.DetailedBuildReport
             });

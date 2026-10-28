@@ -18,6 +18,24 @@ namespace SceneLookLab
         static Material original;
         static string destination;
         static int waitFrames;
+        static bool? previousCompatibility;
+
+        public static void RunCompatibility()
+        {
+            if (!Application.isBatchMode || !File.Exists("Assets/.gitkeep"))
+                throw new InvalidOperationException("Use only the disposable validation project.");
+            var settings = GraphicsSettings.GetRenderPipelineSettings<RenderGraphSettings>();
+            previousCompatibility = settings.enableRenderCompatibilityMode;
+            settings.enableRenderCompatibilityMode = true;
+            Run();
+        }
+
+        static void RestoreCompatibility()
+        {
+            if (!previousCompatibility.HasValue) return;
+            GraphicsSettings.GetRenderPipelineSettings<RenderGraphSettings>().enableRenderCompatibilityMode = previousCompatibility.Value;
+            previousCompatibility = null;
+        }
 
         public static void Run()
         {
@@ -25,7 +43,7 @@ namespace SceneLookLab
                 throw new InvalidOperationException("Validation is restricted to the isolated batch test project.");
             try
             {
-                destination = Path.GetFullPath("../Validation-0.7");
+                destination = Path.GetFullPath("../Validation-0.8");
                 Directory.CreateDirectory(destination);
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
                 if (!AssetDatabase.IsValidFolder("Assets/LabDemo")) AssetDatabase.CreateFolder("Assets", "LabDemo");
@@ -318,9 +336,11 @@ namespace SceneLookLab
                 "Clay remains available and legacy shader IDs remain stable");
             HatchValidation.Run(camera, null);
             StandardLitValidation.Run(original);
+            OcclusionValidation.Run();
             ApplyValidation.Run(subject, original);
             File.WriteAllText(Path.Combine(destination, "result.txt"), "PASS: preview regressions and apply destination, asset preservation, runtime shader references, Undo/Redo, outline cleanup and filename collision checks.\n");
             Debug.Log("SCENE_LOOK_LAB_VALIDATION_PASSED");
+            RestoreCompatibility();
             EditorApplication.Exit(0);
         }
 
@@ -343,6 +363,7 @@ namespace SceneLookLab
 
         static void Fail(Exception exception)
         {
+            RestoreCompatibility();
             Debug.LogException(exception);
             if (!string.IsNullOrEmpty(destination)) File.WriteAllText(Path.Combine(destination, "result.txt"), exception.ToString());
             EditorApplication.Exit(1);

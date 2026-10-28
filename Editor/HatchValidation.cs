@@ -28,7 +28,7 @@ namespace SceneLookLab
                         texture.ReadPixels(new Rect(0, 0, 960, 540), 0, 0);
                         texture.Apply();
                         var bytes = texture.EncodeToPNG();
-                        File.WriteAllBytes(Path.GetFullPath("../Validation-0.7/Hatching" + degrees + ".png"), bytes);
+                        File.WriteAllBytes(Path.GetFullPath("../Validation-0.8/Hatching" + degrees + ".png"), bytes);
                         return bytes;
                     }
                     finally { RenderTexture.active = prior; Object.DestroyImmediate(texture); }

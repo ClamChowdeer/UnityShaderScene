@@ -28,6 +28,8 @@ Shader "Hidden/SceneLookLab/Surface"
     {
         Tags { "RenderPipeline"="UniversalPipeline" "RenderType"="Opaque" "Queue"="Geometry" }
         Cull [_Cull]
+        ZWrite On
+        ZTest LEqual
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
@@ -41,11 +43,12 @@ Shader "Hidden/SceneLookLab/Surface"
             float _ClayDetail, _ClayDetailSize, _ClayUnevenness, _ClayShine, _ClayTextureStrength;
         CBUFFER_END
         struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
-        struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half fog : TEXCOORD3; float3 positionOS : TEXCOORD4; UNITY_VERTEX_OUTPUT_STEREO };
+        struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half fog : TEXCOORD3; float3 positionOS : TEXCOORD4; UNITY_VERTEX_INPUT_INSTANCE_ID UNITY_VERTEX_OUTPUT_STEREO };
         Varyings Vert(Attributes v)
         {
             Varyings o;
             UNITY_SETUP_INSTANCE_ID(v);
+            UNITY_TRANSFER_INSTANCE_ID(v, o);
             UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
             o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
             o.positionOS = v.positionOS.xyz;
@@ -61,6 +64,46 @@ Shader "Hidden/SceneLookLab/Surface"
             if (_AlphaClip > 0.5) clip(base.a - _Cutoff);
             return base;
         }
+        float NoiseHash(float3 p) { return frac(sin(dot(p, float3(127.1,311.7,74.7))) * 43758.5453); }
+        float BrushNoise(float3 p)
+        {
+            float3 cell = floor(p), f = frac(p);
+            f = f * f * (3 - 2 * f);
+            return lerp(lerp(lerp(NoiseHash(cell), NoiseHash(cell + float3(1,0,0)), f.x),
+                             lerp(NoiseHash(cell + float3(0,1,0)), NoiseHash(cell + float3(1,1,0)), f.x), f.y),
+                        lerp(lerp(NoiseHash(cell + float3(0,0,1)), NoiseHash(cell + float3(1,0,1)), f.x),
+                             lerp(NoiseHash(cell + float3(0,1,1)), NoiseHash(cell + 1), f.x), f.y), f.z);
+        }
+        half3 SurfaceNormal(Varyings i, out float grain, out float fineFade)
+        {
+            half3 normal = normalize(i.normalWS);
+            grain = 0.5;
+            fineFade = 0;
+            if ((int)round(_LookMode) != 2) return normal;
+            // Model-local 3D texture: no UV seams, and no sliding on rigid objects.
+            float size = max(0.02, _ClayDetailSize);
+            float3 p = i.positionOS / size;
+            float footprint = max(length(ddx(p)), length(ddy(p)));
+            fineFade = 1 - smoothstep(0.25, 1.2, footprint);
+            grain = BrushNoise(p * 2.7);
+            float pores = pow(saturate(BrushNoise(p * 5.3 + 13.7)), 3);
+            float warp = BrushNoise(p * 0.35 + 7.1);
+            float ridges = sin((p.x * 0.7 + p.y + p.z * 0.4 + warp * 2) * 18);
+            float ridgeFade = 1 - smoothstep(0.08, 0.45, footprint);
+            float dents = BrushNoise(i.positionOS * 5.5 + 4.3);
+            float height = _ClayDetail * size * (0.015 * grain - 0.012 * pores + 0.00035 * ridges * ridgeFade) * fineFade
+                + _ClayUnevenness * 0.025 * dents;
+            // Surface-gradient bump mapping works without tangents or normal textures.
+            float3 dx = ddx(i.positionWS), dy = ddy(i.positionWS);
+            float scale = length(dx) / max(length(ddx(i.positionOS)), 0.00001);
+            float3 r1 = cross(dy, normal), r2 = cross(normal, dx);
+            float determinant = dot(dx, r1);
+            float3 gradient = (ddx(height) * r1 + ddy(height) * r2) * scale;
+            if (abs(determinant) > 1e-10)
+                normal = normalize(abs(determinant) * normal - sign(determinant) * gradient);
+
+            return normal;
+        }
         ENDHLSL
         Pass
         {
@@ -74,16 +117,6 @@ Shader "Hidden/SceneLookLab/Surface"
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #pragma multi_compile_fragment _ _SHADOWS_SOFT
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            float NoiseHash(float3 p) { return frac(sin(dot(p, float3(127.1,311.7,74.7))) * 43758.5453); }
-            float BrushNoise(float3 p)
-            {
-                float3 cell = floor(p), f = frac(p);
-                f = f * f * (3 - 2 * f);
-                return lerp(lerp(lerp(NoiseHash(cell), NoiseHash(cell + float3(1,0,0)), f.x),
-                                 lerp(NoiseHash(cell + float3(0,1,0)), NoiseHash(cell + float3(1,1,0)), f.x), f.y),
-                            lerp(lerp(NoiseHash(cell + float3(0,0,1)), NoiseHash(cell + float3(1,0,1)), f.x),
-                                 lerp(NoiseHash(cell + float3(0,1,1)), NoiseHash(cell + 1), f.x), f.y), f.z);
-            }
             half4 Frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
@@ -95,27 +128,8 @@ Shader "Hidden/SceneLookLab/Surface"
                 Light light = GetMainLight(TransformWorldToShadowCoord(i.positionWS));
                 if (mode == 2)
                 {
-                    // Model-local 3D texture: no UV seams, and no sliding on rigid objects.
-                    float size = max(0.02, _ClayDetailSize);
-                    float3 p = i.positionOS / size;
-                    float footprint = max(length(ddx(p)), length(ddy(p)));
-                    float fineFade = 1 - smoothstep(0.25, 1.2, footprint);
-                    float grain = BrushNoise(p * 2.7);
-                    float pores = pow(saturate(BrushNoise(p * 5.3 + 13.7)), 3);
-                    float warp = BrushNoise(p * 0.35 + 7.1);
-                    float ridges = sin((p.x * 0.7 + p.y + p.z * 0.4 + warp * 2) * 18);
-                    float ridgeFade = 1 - smoothstep(0.08, 0.45, footprint);
-                    float dents = BrushNoise(i.positionOS * 5.5 + 4.3);
-                    float height = _ClayDetail * size * (0.015 * grain - 0.012 * pores + 0.00035 * ridges * ridgeFade) * fineFade
-                        + _ClayUnevenness * 0.025 * dents;
-                    // Surface-gradient bump mapping works without tangents or normal textures.
-                    float3 dx = ddx(i.positionWS), dy = ddy(i.positionWS);
-                    float scale = length(dx) / max(length(ddx(i.positionOS)), 0.00001);
-                    float3 r1 = cross(dy, normal), r2 = cross(normal, dx);
-                    float determinant = dot(dx, r1);
-                    float3 gradient = (ddx(height) * r1 + ddy(height) * r2) * scale;
-                    if (abs(determinant) > 1e-10)
-                        normal = normalize(abs(determinant) * normal - sign(determinant) * gradient);
+                    float grain, fineFade;
+                    normal = SurfaceNormal(i, grain, fineFade);
                     colour = lerp(_BaseColor.rgb, base.rgb, saturate(_ClayTextureStrength));
                     colour *= 1 + _ClayDetail * (grain - 0.5) * 0.045 * fineFade;
                     half wrap = saturate((dot(normal, light.direction) + 0.18) / 1.18) * light.shadowAttenuation;
@@ -223,7 +237,42 @@ Shader "Hidden/SceneLookLab/Surface"
             #pragma vertex Vert
             #pragma fragment DepthFrag
             #pragma multi_compile_instancing
-            half4 DepthFrag(Varyings i) : SV_Target { BaseSample(i.uv); return i.positionCS.z; }
+            half4 DepthFrag(Varyings i) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i); BaseSample(i.uv); return i.positionCS.z; }
+            ENDHLSL
+        }
+        Pass
+        {
+            Name "DepthNormals"
+            Tags { "LightMode"="DepthNormalsOnly" }
+            ZWrite On
+            HLSLPROGRAM
+            #pragma vertex Vert
+            #pragma fragment DepthNormalsFrag
+            #pragma multi_compile_instancing
+            #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RenderingLayers.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RealtimeLights.hlsl"
+            void DepthNormalsFrag(Varyings i, out half4 outNormal : SV_Target0
+                #ifdef _WRITE_RENDERING_LAYERS
+                    , out float4 outLayers : SV_Target1
+                #endif
+            )
+            {
+                UNITY_SETUP_INSTANCE_ID(i);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+                BaseSample(i.uv);
+                float grain, fineFade;
+                float3 normal = SurfaceNormal(i, grain, fineFade);
+                #if defined(_GBUFFER_NORMALS_OCT)
+                    float2 oct = PackNormalOctQuadEncode(normal);
+                    outNormal = half4(PackFloat2To888(saturate(oct * 0.5 + 0.5)), 0);
+                #else
+                    outNormal = half4(normal, 0);
+                #endif
+                #ifdef _WRITE_RENDERING_LAYERS
+                    outLayers = float4(EncodeMeshRenderingLayer(GetMeshRenderingLayer()), 0, 0, 0);
+                #endif
+            }
             ENDHLSL
         }
         Pass
